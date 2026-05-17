@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Star, Plus, Pencil, Trash2, Lock, Unlock } from 'lucide-react';
+import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://yrecadlcgucgugvhapoi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_-8O4aLdjhEYTnnnaspj8Tw_5TFaF9Xn';
@@ -13,8 +13,13 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingAlbumId, setEditingAlbumId] = useState(null);
   const [expandedAlbums, setExpandedAlbums] = useState({}); 
+  
+  // Spotify Integration States
+  const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [isFetchingSpotify, setIsFetchingSpotify] = useState(false);
+
   const [formData, setFormData] = useState({ 
-    title: '', artist: '', year: '', genre: 'Pop', tracks: '', songs: [] 
+    title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', songs: [] 
   });
 
   // Admin Protection States
@@ -27,13 +32,44 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('albums')
-        .select(`id, title, artist, year, genre, songs (id, name, rating, track_number)`)
+        .select(`id, title, artist, year, genre, image_url, songs (id, name, rating, track_number)`)
         .order('created_at', { ascending: false })
         .order('track_number', { foreignTable: 'songs', ascending: true });
       if (error) throw error;
       setAlbums(data || []);
     } catch (err) {
       console.error("Fetch error:", err);
+    }
+  }
+
+  async function handleFetchSpotifyData() {
+    if (!spotifyUrl.trim()) return alert("Please paste a valid Spotify link first!");
+    setIsFetchingSpotify(true);
+    try {
+      // Direct integration endpoint path mapping to our Netlify backend middleware engine
+      const response = await fetch('/.netlify/functions/get-spotify-album', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ albumUrl: spotifyUrl })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch Spotify data');
+
+      setFormData(prev => ({
+        ...prev,
+        title: data.title || '',
+        artist: data.artist || '',
+        year: data.year || '',
+        image_url: data.imageUrl || '',
+        tracks: data.tracks && data.tracks.length > 0 ? data.tracks.join('\n') : ''
+      }));
+
+      setSpotifyUrl(''); // Reset url link state row completely upon complete generation pass
+    } catch (err) {
+      alert(`Spotify Import Error: ${err.message}`);
+    } finally {
+      setIsFetchingSpotify(false);
     }
   }
 
@@ -51,17 +87,11 @@ export default function App() {
   }
 
   function toggleExpand(albumId) {
-    setExpandedAlbums(prev => ({
-      ...prev,
-      [albumId]: !prev[albumId]
-    }));
+    setExpandedAlbums(prev => ({ ...prev, [albumId]: !prev[albumId] }));
   }
 
   function handleNavigateToAlbum(albumId) {
-    setExpandedAlbums(prev => ({
-      ...prev,
-      [albumId]: true
-    }));
+    setExpandedAlbums(prev => ({ ...prev, [albumId]: true }));
     setView('all');
   }
 
@@ -74,6 +104,7 @@ export default function App() {
       artist: album.artist,
       year: album.year || '',
       genre: album.genre || 'Pop',
+      image_url: album.image_url || '',
       tracks: '',
       songs: album.songs ? [...album.songs].sort((a, b) => a.track_number - b.track_number) : [] 
     });
@@ -96,7 +127,8 @@ export default function App() {
       if (editingAlbumId) {
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
-          year: parseInt(formData.year) || null, genre: formData.genre
+          year: parseInt(formData.year) || null, genre: formData.genre,
+          image_url: formData.image_url
         }).eq('id', editingAlbumId);
 
         const { data: currentDbSongs } = await supabase.from('songs').select('id').eq('album_id', editingAlbumId);
@@ -115,7 +147,7 @@ export default function App() {
       } else {
         const { data: album, error: albumError } = await supabase
           .from('albums')
-          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre }])
+          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre, image_url: formData.image_url }])
           .select().single();
         if (albumError) throw albumError;
         
@@ -140,11 +172,12 @@ export default function App() {
   function closeModal() {
     setShowModal(false);
     setEditingAlbumId(null);
-    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', songs: [] });
+    setSpotifyUrl('');
+    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', songs: [] });
   }
 
   async function updateRating(songId, rating) {
-    if (!isAdmin) return; // Viewers cannot change ratings
+    if (!isAdmin) return; 
     await supabase.from('songs').update({ rating }).eq('id', songId);
     fetchAlbums();
   }
@@ -164,12 +197,7 @@ export default function App() {
   const rankedAlbums = [...albums].sort((a, b) => calcAvg(b.songs) - calcAvg(a.songs));
   
   const allSongs = albums.flatMap(a => 
-    (a.songs || []).map(s => ({ 
-      ...s, 
-      albumTitle: a.title, 
-      artist: a.artist, 
-      year: a.year 
-    }))
+    (a.songs || []).map(s => ({ ...s, albumTitle: a.title, artist: a.artist, year: a.year }))
   ).sort((a, b) => b.rating - a.rating);
 
   return (
@@ -213,19 +241,29 @@ export default function App() {
                     onClick={() => toggleExpand(album.id)}
                     className="p-4 bg-[#1a1a1a]/40 flex justify-between items-center gap-4 cursor-pointer hover:bg-[#1a1a1a]/60 transition"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
-                        {album.genre && (
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">
-                            {album.genre}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
-                        <span>{album.artist}</span>
-                        {album.year && <span>• {album.year}</span>}
-                        <span>• {ratedCount}/{totalCount} rated</span>
+                    <div className="min-w-0 flex-1 flex gap-4 items-center">
+                      {album.image_url && (
+                        <img 
+                          src={album.image_url} 
+                          alt={album.title} 
+                          className="w-12 h-12 rounded-lg object-cover bg-zinc-900 border border-zinc-800 shrink-0"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
+                          {album.genre && (
+                            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">
+                              {album.genre}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
+                          <span>{album.artist}</span>
+                          {album.year && <span>• {album.year}</span>}
+                          <span>• {ratedCount}/{totalCount} rated</span>
+                        </div>
                       </div>
                     </div>
 
@@ -266,7 +304,7 @@ export default function App() {
                                     song.rating > starIdx 
                                       ? 'fill-yellow-500 text-yellow-500 drop-shadow-[0_0_2px_rgba(234,179,8,0.3)]' 
                                       : song.rating === 0 && !isAdmin 
-                                        ? 'text-zinc-900/40' // Fades unrated stars more heavily for public viewers
+                                        ? 'text-zinc-900/40' 
                                         : 'text-zinc-800 hover:text-zinc-500'
                                   }`}
                                 />
@@ -303,6 +341,14 @@ export default function App() {
                       <span className={`text-base font-bold italic w-6 shrink-0 ${getRankColor(i)}`}>
                         #{i + 1}
                       </span>
+                      {album.image_url && (
+                        <img 
+                          src={album.image_url} 
+                          alt={album.title} 
+                          className="w-10 h-10 rounded-md object-cover bg-zinc-900 shrink-0"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      )}
                       <div className="min-w-0">
                         <div className="flex items-baseline gap-2 flex-wrap">
                           <span 
@@ -387,21 +433,47 @@ export default function App() {
         )}
       </div>
 
-      {/* INPUT / EDIT MODAL */}
+      {/* INPUT / EDIT MODAL WITH SPOTIFY HOOKS */}
       {showModal && isAdmin && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={closeModal}>
           <div className="bg-[#181818] w-full max-w-lg p-6 rounded-3xl border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">{editingAlbumId ? 'Edit Album' : 'Add Album'}</h2>
+            
+            {/* Spotify URL Link-Paste Bar (Only displays when creating brand new tracks) */}
+            {!editingAlbumId && (
+              <div className="mb-4 flex gap-2 bg-zinc-950 p-2 rounded-xl border border-zinc-800/60 focus-within:border-zinc-700 transition">
+                <div className="flex items-center pl-1 text-zinc-500"><Link2 size={14} /></div>
+                <input 
+                  placeholder="Paste Spotify Album Link..." 
+                  className="bg-transparent flex-1 text-xs outline-none text-white placeholder-zinc-600" 
+                  value={spotifyUrl} 
+                  onChange={e => setSpotifyUrl(e.target.value)} 
+                  disabled={isFetchingSpotify}
+                />
+                <button 
+                  onClick={handleFetchSpotifyData}
+                  disabled={isFetchingSpotify || !spotifyUrl.trim()}
+                  className="bg-zinc-800 border border-zinc-700 text-[10px] font-bold text-zinc-300 px-3 py-1 rounded-lg hover:text-white disabled:opacity-40 transition flex items-center gap-1 shrink-0"
+                >
+                  {isFetchingSpotify ? <Loader2 size={10} className="animate-spin" /> : 'AUTOFILL'}
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 mb-3">
               <input placeholder="Album title" className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-sm text-white" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
               <input placeholder="Artist" className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-sm text-white" value={formData.artist} onChange={e => setFormData({...formData, artist: e.target.value})} />
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <input placeholder="Year" type="number" className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-sm text-white" value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} />
               <select className="bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-zinc-400 text-sm" value={formData.genre} onChange={e => setFormData({...formData, genre: e.target.value})}>
                 {['Pop', 'Hip Hop', 'Rock', 'R&B', 'Electronic', 'Country'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
+            <div className="mb-4">
+              <input placeholder="Image Cover URL (Optional)" className="w-full bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-xs text-zinc-400" value={formData.image_url} onChange={e => setFormData({...formData, image_url: e.target.value})} />
+            </div>
+
             {editingAlbumId ? (
               <div className="mb-6 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 block">Manage Songs</label>
