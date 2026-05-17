@@ -50,8 +50,9 @@ export default function App() {
       const { data, error } = await supabase.from('profiles').select('*').order('name', { ascending: true });
       if (error) throw error;
       setProfiles(data || []);
-      if (data && data.length > 0 && !activeProfile) {
-        // Default to Mukund if present, otherwise fallback to first profile
+      
+      if (data && data.length > 0) {
+        // Fix: Properly match your exact profile name regardless of uppercase or lowercase letters
         const defaultProf = data.find(p => p.name.toLowerCase() === 'mukund') || data[0];
         setActiveProfile(defaultProf);
       }
