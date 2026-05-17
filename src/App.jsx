@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Star, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Star, Plus, Pencil, Trash2, Lock, Unlock } from 'lucide-react';
 
 const SUPABASE_URL = 'https://yrecadlcgucgugvhapoi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_-8O4aLdjhEYTnnnaspj8Tw_5TFaF9Xn';
@@ -17,11 +17,14 @@ export default function App() {
     title: '', artist: '', year: '', genre: 'Pop', tracks: '', songs: [] 
   });
 
+  // Admin Protection States
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+
   useEffect(() => { fetchAlbums(); }, []);
 
   async function fetchAlbums() {
     try {
-      // Songs are fetched explicitly ordered by your custom track_number column
       const { data, error } = await supabase
         .from('albums')
         .select(`id, title, artist, year, genre, songs (id, name, rating, track_number)`)
@@ -34,6 +37,19 @@ export default function App() {
     }
   }
 
+  function handlePasswordChange(e) {
+    const val = e.target.value;
+    setPasswordInput(val);
+    if (val === 'vibecode') {
+      setIsAdmin(true);
+    }
+  }
+
+  function handleSignOut() {
+    setIsAdmin(false);
+    setPasswordInput('');
+  }
+
   function toggleExpand(albumId) {
     setExpandedAlbums(prev => ({
       ...prev,
@@ -41,7 +57,6 @@ export default function App() {
     }));
   }
 
-  // Handles clicking an album on the Rankings tab to view it expanded in the Library tab
   function handleNavigateToAlbum(albumId) {
     setExpandedAlbums(prev => ({
       ...prev,
@@ -52,6 +67,7 @@ export default function App() {
 
   function startEditing(e, album) {
     e.stopPropagation(); 
+    if (!isAdmin) return;
     setEditingAlbumId(album.id);
     setFormData({
       title: album.title,
@@ -66,6 +82,7 @@ export default function App() {
 
   async function deleteAlbum(e, id) {
     e.stopPropagation(); 
+    if (!isAdmin) return;
     if (window.confirm("Delete this album?")) {
       await supabase.from('albums').delete().eq('id', id);
       fetchAlbums();
@@ -73,6 +90,7 @@ export default function App() {
   }
 
   async function handleSaveAlbum() {
+    if (!isAdmin) return;
     if (!formData.title || !formData.artist) return alert("Title and Artist required!");
     try {
       if (editingAlbumId) {
@@ -103,8 +121,6 @@ export default function App() {
         
         if (formData.tracks.trim()) {
           const lines = formData.tracks.split('\n').filter(t => t.trim());
-          
-          // Maps an explicit position sequence index matching line breaks exactly
           const songsToInsert = lines.map((line, index) => ({
             name: line.trim(),
             album_id: album.id,
@@ -128,6 +144,7 @@ export default function App() {
   }
 
   async function updateRating(songId, rating) {
+    if (!isAdmin) return; // Viewers cannot change ratings
     await supabase.from('songs').update({ rating }).eq('id', songId);
     fetchAlbums();
   }
@@ -156,19 +173,24 @@ export default function App() {
   ).sort((a, b) => b.rating - a.rating);
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] text-[#e4e4e4] p-4 font-sans selection:bg-zinc-800">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-[#0f0f0f] text-[#e4e4e4] p-4 font-sans selection:bg-zinc-800 flex flex-col justify-between">
+      <div className="max-w-4xl mx-auto w-full flex-1">
         
         {/* Header Area */}
         <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setShowModal(true)} 
-              className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
-              title="Add Album"
-            >
-              <Plus size={16} />
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => setShowModal(true)} 
+                className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                title="Add Album"
+              >
+                <Plus size={16} />
+              </button>
+            )}
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800/60">
+              {isAdmin ? "Admin Mode" : "Viewer Mode"}
+            </span>
           </div>
           <div className="flex gap-2">
             <button onClick={() => setView('all')} className={`px-4 py-1.5 rounded-full text-xs font-bold ${view === 'all' ? 'bg-white text-black' : 'text-zinc-500'}`}>Library</button>
@@ -187,7 +209,6 @@ export default function App() {
               return (
                 <div key={album.id} className="bg-[#141414] rounded-xl border border-zinc-900 shadow-xl overflow-hidden">
                   
-                  {/* Clickable Album Info Row Header */}
                   <div 
                     onClick={() => toggleExpand(album.id)}
                     className="p-4 bg-[#1a1a1a]/40 flex justify-between items-center gap-4 cursor-pointer hover:bg-[#1a1a1a]/60 transition"
@@ -212,18 +233,19 @@ export default function App() {
                       <div className="text-right">
                         <div className="text-lg font-black text-zinc-200 leading-none">{calcAvg(album.songs)}/10</div>
                       </div>
-                      <div className="flex gap-1">
-                        <button onClick={(e) => startEditing(e, album)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white transition">
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={(e) => deleteAlbum(e, album.id)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-red-400 transition">
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-1">
+                          <button onClick={(e) => startEditing(e, album)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white transition">
+                            <Pencil size={12} />
+                          </button>
+                          <button onClick={(e) => deleteAlbum(e, album.id)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-red-400 transition">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Collapsible Tracks List */}
                   {isExpanded && (
                     <div className="divide-y divide-zinc-900/30 px-2 pb-2 border-t border-zinc-900/40 bg-zinc-950/10">
                       {(album.songs || []).map((song, i) => (
@@ -240,10 +262,12 @@ export default function App() {
                                   key={starIdx} 
                                   size={12} 
                                   onClick={() => updateRating(song.id, starIdx + 1)}
-                                  className={`cursor-pointer transition-all ${
+                                  className={`transition-all ${!isAdmin ? 'cursor-default' : 'cursor-pointer'} ${
                                     song.rating > starIdx 
                                       ? 'fill-yellow-500 text-yellow-500 drop-shadow-[0_0_2px_rgba(234,179,8,0.3)]' 
-                                      : 'text-zinc-800 hover:text-zinc-500'
+                                      : song.rating === 0 && !isAdmin 
+                                        ? 'text-zinc-900/40' // Fades unrated stars more heavily for public viewers
+                                        : 'text-zinc-800 hover:text-zinc-500'
                                   }`}
                                 />
                               ))}
@@ -295,7 +319,6 @@ export default function App() {
                     </div>
                     <div className="text-xl font-bold text-zinc-100 shrink-0 pl-4 z-10">{score.toFixed(1)}</div>
                     
-                    {/* Progress Indicator Accent Line */}
                     <div 
                       className="absolute bottom-0 left-12 h-[3px] bg-amber-600/70 rounded-full transition-all duration-500"
                       style={{ width: `calc(${percentage}% - 3rem)` }}
@@ -324,7 +347,6 @@ export default function App() {
                       {song.rating ? `${song.rating}.0` : '0.0'}
                     </div>
 
-                    {/* Progress Indicator Accent Line */}
                     <div 
                       className="absolute bottom-0 left-12 h-[3px] bg-amber-600/70 rounded-full transition-all duration-500"
                       style={{ width: `calc(${percentage}% - 3rem)` }}
@@ -338,8 +360,35 @@ export default function App() {
 
       </div>
 
+      {/* FOOTER LOCK COMPONENT */}
+      <div className="max-w-4xl mx-auto w-full border-t border-zinc-900 mt-12 pt-4 pb-2 flex justify-center items-center text-xs">
+        {isAdmin ? (
+          <div className="flex items-center gap-3 bg-zinc-900/40 border border-zinc-800/50 px-3 py-1.5 rounded-xl">
+            <Unlock size={12} className="text-emerald-500 animate-pulse" />
+            <span className="text-zinc-400 font-medium">Logged in as Editor</span>
+            <button 
+              onClick={handleSignOut} 
+              className="text-[10px] text-zinc-500 font-bold tracking-wider hover:text-white ml-2 bg-zinc-800 px-2 py-0.5 rounded transition"
+            >
+              LOCK
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 bg-zinc-900/20 px-3 py-1 rounded-xl group hover:bg-zinc-900/50 transition border border-transparent hover:border-zinc-800/40">
+            <Lock size={11} className="text-zinc-600 group-hover:text-zinc-400 transition" />
+            <input 
+              type="password" 
+              placeholder="Admin unlock" 
+              value={passwordInput}
+              onChange={handlePasswordChange}
+              className="bg-transparent outline-none w-20 text-zinc-600 focus:text-zinc-300 placeholder-zinc-700 focus:placeholder-zinc-500 font-medium transition text-center"
+            />
+          </div>
+        )}
+      </div>
+
       {/* INPUT / EDIT MODAL */}
-      {showModal && (
+      {showModal && isAdmin && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={closeModal}>
           <div className="bg-[#181818] w-full max-w-lg p-6 rounded-3xl border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">{editingAlbumId ? 'Edit Album' : 'Add Album'}</h2>
