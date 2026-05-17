@@ -369,7 +369,7 @@ export default function App() {
 
         {/* View 2: RANKINGS */}
         {view === 'rankings' && (
-          <div className="max-w-3xl mx-auto">
+          <div>
             <div className="flex gap-4 mb-6">
               <button onClick={() => setRankSubTab('albums')} className={`text-xs font-bold tracking-wider ${rankSubTab === 'albums' ? 'text-white border-b-2 border-white pb-1' : 'text-zinc-500'}`}>ALBUMS</button>
               <button onClick={() => setRankSubTab('songs')} className={`text-xs font-bold tracking-wider ${rankSubTab === 'songs' ? 'text-white border-b-2 border-white pb-1' : 'text-zinc-500'}`}>SONGS</button>
