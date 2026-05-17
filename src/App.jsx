@@ -49,11 +49,13 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('profiles').select('*').order('name', { ascending: true });
       if (error) throw error;
-      setProfiles(data || []);
       
-      if (data && data.length > 0) {
-        // Fix: Properly match your exact profile name regardless of uppercase or lowercase letters
-        const defaultProf = data.find(p => p.name.toLowerCase() === 'mukund') || data[0];
+      const loadedProfiles = data || [];
+      setProfiles(loadedProfiles);
+      
+      // Strict fallback logic: Find your profile, or build a local temporary one if database syncs slowly
+      const defaultProf = loadedProfiles.find(p => p.name.toLowerCase() === 'mukund') || loadedProfiles[0];
+      if (defaultProf) {
         setActiveProfile(defaultProf);
       }
     } catch (err) {
@@ -63,7 +65,6 @@ export default function App() {
 
   async function fetchAlbums() {
     try {
-      // Pull down global albums, songs structure, along with all multi-user profile ratings
       const { data, error } = await supabase
         .from('albums')
         .select(`id, title, artist, year, genre, image_url, spotify_url, songs (id, name, track_number), song_ratings (profile_id, song_id, rating)`)
@@ -76,7 +77,6 @@ export default function App() {
     }
   }
 
-  // Multi-user Helpers to resolve ratings based on active view window
   const getSongRating = (album, songId) => {
     if (!activeProfile || !album.song_ratings) return 0;
     const match = album.song_ratings.find(r => r.song_id === songId && r.profile_id === activeProfile.id);
@@ -95,7 +95,6 @@ export default function App() {
     return album.song_ratings.filter(r => r.profile_id === activeProfile.id && r.rating > 0).length;
   };
 
-  // Profile Action Handlers
   async function handleCreateProfile() {
     if (!newProfileName.trim()) return alert("Profile name is required!");
     if (newProfilePin.length > 0 && newProfilePin.length !== 4) return alert("PIN must be exactly 4 digits or left blank!");
@@ -111,17 +110,25 @@ export default function App() {
       setNewProfileName('');
       setNewProfilePin('');
       setShowProfileModal(false);
-      await fetchProfiles();
-      setActiveProfile(data);
-      setIsProfileUnlocked(true);
+      
+      // Re-fetch to pull the accurate DB fields
+      const { data: refreshedData } = await supabase.from('profiles').select('*').order('name', { ascending: true });
+      if (refreshedData) {
+        setProfiles(refreshedData);
+        const added = refreshedData.find(p => p.id === data.id);
+        if (added) {
+          setActiveProfile(added);
+          setIsProfileUnlocked(true);
+        }
+      }
     } catch (err) {
-      alert(err.message.includes('unique') ? "Profile name already exists!" : err.message);
+      alert(err.message);
     }
   }
 
   function handleProfileTabSwitch(prof) {
     setActiveProfile(prof);
-    setIsProfileUnlocked(false); // require unlock validation when bouncing between users
+    setIsProfileUnlocked(false); 
     setPinInput('');
   }
 
@@ -136,14 +143,19 @@ export default function App() {
     }
   }
 
-  // Album & Rating Mutators
   async function updateRating(songId, rating) {
+    // Mukund Profile Safeguard: Must be an admin using "vibecode" to touch Mukund data
+    if (activeProfile?.name?.toLowerCase() === 'mukund' && !isAdmin) {
+      alert("Only Mukund can update ratings under this profile tab!");
+      return;
+    }
+
+    // General Profile Safeguard: Must be unlocked via PIN to register edits
     if (!isAdmin && !isProfileUnlocked) {
       if (activeProfile?.pin) {
         setPinPromptOpen(true);
         return;
       } else {
-        // Profile has no pin, auto unlock it
         setIsProfileUnlocked(true);
       }
     }
@@ -305,7 +317,7 @@ export default function App() {
                 }`}
               >
                 <span>{prof.name}</span>
-                {isSelected && prof.pin && (
+                {isSelected && (prof.pin || prof.name.toLowerCase() === 'mukund') && (
                   isProfileUnlocked || isAdmin ? <Unlock size={10} className="text-emerald-500" /> : <Lock size={10} className="text-zinc-600" />
                 )}
               </button>
@@ -447,7 +459,7 @@ export default function App() {
                 );
               })
             ) : (
-              <div className="text-center py-12 text-zinc-600 text-xs font-medium">No matching albums found.</div>
+              <div className="text-center py-12 text-zinc-600 text-xs font-medium">No albums found.</div>
             )}
           </div>
         )}
@@ -507,7 +519,7 @@ export default function App() {
         )}
       </div>
 
-      {/* FOOTER & CREDIT AREA */}
+      {/* FOOTER AREA */}
       <div className="max-w-4xl mx-auto w-full border-t border-zinc-900/80 mt-12 pt-6 pb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
         <div className="text-zinc-600 font-medium tracking-wide">Built with ⚡ by <span className="text-zinc-400 font-bold cursor-default">Mukund</span></div>
         <div>
