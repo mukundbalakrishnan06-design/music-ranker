@@ -111,7 +111,7 @@ export default function App() {
       setShowProfileModal(false);
       
       const { data: refreshedData } = await supabase.from('profiles').select('*').order('name', { ascending: true });
-      if (refreszedData) {
+      if (refreshedData) {
         setProfiles(refreshedData);
         const added = refreshedData.find(p => p.id === data.id);
         if (added) {
@@ -152,7 +152,6 @@ export default function App() {
 
   function handleProfileTabSwitch(prof) {
     setActiveProfile(prof);
-    // If the profile has no PIN, it's open and unlocked automatically
     setIsProfileUnlocked(!prof.pin); 
     setPinInput('');
   }
@@ -264,7 +263,6 @@ export default function App() {
   }
 
   async function handleSaveAlbum() {
-    // FIX: Allow either an explicitly Unlocked User Workspace OR Admin Mode to submit updates
     if (!isAdmin && !isProfileUnlocked) {
       return alert("Please unlock your workspace dashboard session to register new albums!");
     }
@@ -272,7 +270,6 @@ export default function App() {
     
     try {
       if (editingAlbumId) {
-        // Edit block stays restricted implicitly on frontend layout buttons, but handles updates
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
           year: parseInt(formData.year) || null, genre: formData.genre,
@@ -287,17 +284,21 @@ export default function App() {
         
         if (formData.tracks.trim()) {
           const lines = formData.tracks.split('\n').filter(t => t.trim());
+          
+          // FIX: Removed "rating: 0" insert parameter since tracking now relies cleanly on 'song_ratings'
           const songsToInsert = lines.map((line, index) => ({
             name: line.trim(),
             album_id: album.id,
-            rating: 0,
             track_number: index + 1
           }));
-          await supabase.from('songs').insert(songsToInsert);
+          
+          const { error: songsError } = await supabase.from('songs').insert(songsToInsert);
+          if (songsError) throw songsError;
         }
       }
       closeModal();
-      fetchAlbums();
+      await fetchAlbums();
+      alert("Album successfully saved to library!");
     } catch (error) { 
       alert(`Save operation failed: ${error.message}`); 
     }
@@ -328,7 +329,7 @@ export default function App() {
   ).sort((a, b) => b.rating - a.rating);
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-200 p-4 font-sans selection:bg-zinc-800 flex flex-col justify-between">
+    <div className="min-h-screen bg-[#09090b] text-zinc-200 p-4 font-sans flex flex-col justify-between">
       <div className="max-w-4xl mx-auto w-full flex-1">
         
         {/* Profile Switcher Row */}
@@ -374,11 +375,10 @@ export default function App() {
         {/* Header Navigation Area */}
         <div className="flex justify-between items-center mb-6 border-b border-zinc-800/60 pb-4">
           <div className="flex items-center gap-3">
-            {/* FIX: Make the Plus button appear if the workspace is unlocked OR admin is enabled */}
             {(isAdmin || isProfileUnlocked) && (
               <button 
                 onClick={() => setShowModal(true)} 
-                className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition shadow-sm animate-fade-in"
+                className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition shadow-sm"
                 title="Add Album"
               >
                 <Plus size={16} />
