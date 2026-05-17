@@ -410,7 +410,7 @@ export default function App() {
         
         {/* Left Side: Your Creator Credit */}
         <div className="text-zinc-600 font-medium tracking-wide text-center sm:text-left">
-          Built with ⚡ by <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
+          By <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
         </div>
 
         {/* Right Side: Admin Security Lock */}
