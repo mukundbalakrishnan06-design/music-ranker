@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2, Search, X, User, UserPlus } from 'lucide-react';
+import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2, Search, X, User, UserPlus, UserMinus } from 'lucide-react';
 
 const SUPABASE_URL = 'https://yrecadlcgucgugvhapoi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_-8O4aLdjhEYTnnnaspj8Tw_5TFaF9Xn';
@@ -53,7 +53,6 @@ export default function App() {
       const loadedProfiles = data || [];
       setProfiles(loadedProfiles);
       
-      // Strict fallback logic: Find your profile, or build a local temporary one if database syncs slowly
       const defaultProf = loadedProfiles.find(p => p.name.toLowerCase() === 'mukund') || loadedProfiles[0];
       if (defaultProf) {
         setActiveProfile(defaultProf);
@@ -111,9 +110,8 @@ export default function App() {
       setNewProfilePin('');
       setShowProfileModal(false);
       
-      // Re-fetch to pull the accurate DB fields
       const { data: refreshedData } = await supabase.from('profiles').select('*').order('name', { ascending: true });
-      if (refreshedData) {
+      if (refreszedData) {
         setProfiles(refreshedData);
         const added = refreshedData.find(p => p.id === data.id);
         if (added) {
@@ -126,9 +124,36 @@ export default function App() {
     }
   }
 
+  async function handleDeleteProfile(e, prof) {
+    e.stopPropagation(); 
+    if (!isAdmin) return;
+    
+    if (prof.name.toLowerCase() === 'mukund') {
+      return alert("You cannot delete the primary owner profile!");
+    }
+
+    if (window.confirm(`Are you sure you want to delete "${prof.name}" and all of their rankings permanently?`)) {
+      try {
+        const { error } = await supabase.from('profiles').delete().eq('id', prof.id);
+        if (error) throw error;
+        
+        alert(`Profile "${prof.name}" has been removed.`);
+        if (activeProfile?.id === prof.id) {
+          setIsProfileUnlocked(false);
+        }
+        
+        await fetchProfiles();
+        await fetchAlbums();
+      } catch (err) {
+        alert(`Error deleting profile: ${err.message}`);
+      }
+    }
+  }
+
   function handleProfileTabSwitch(prof) {
     setActiveProfile(prof);
-    setIsProfileUnlocked(false); 
+    // If the profile has no PIN, it's open and unlocked automatically
+    setIsProfileUnlocked(!prof.pin); 
     setPinInput('');
   }
 
@@ -144,13 +169,11 @@ export default function App() {
   }
 
   async function updateRating(songId, rating) {
-    // Mukund Profile Safeguard: Must be an admin using "vibecode" to touch Mukund data
     if (activeProfile?.name?.toLowerCase() === 'mukund' && !isAdmin) {
       alert("Only Mukund can update ratings under this profile tab!");
       return;
     }
 
-    // General Profile Safeguard: Must be unlocked via PIN to register edits
     if (!isAdmin && !isProfileUnlocked) {
       if (activeProfile?.pin) {
         setPinPromptOpen(true);
@@ -241,10 +264,15 @@ export default function App() {
   }
 
   async function handleSaveAlbum() {
-    if (!isAdmin) return;
+    // FIX: Allow either an explicitly Unlocked User Workspace OR Admin Mode to submit updates
+    if (!isAdmin && !isProfileUnlocked) {
+      return alert("Please unlock your workspace dashboard session to register new albums!");
+    }
     if (!formData.title || !formData.artist) return alert("Title and Artist required!");
+    
     try {
       if (editingAlbumId) {
+        // Edit block stays restricted implicitly on frontend layout buttons, but handles updates
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
           year: parseInt(formData.year) || null, genre: formData.genre,
@@ -270,7 +298,9 @@ export default function App() {
       }
       closeModal();
       fetchAlbums();
-    } catch (error) { alert(error.message); }
+    } catch (error) { 
+      alert(`Save operation failed: ${error.message}`); 
+    }
   }
 
   function closeModal() {
@@ -307,10 +337,10 @@ export default function App() {
           {profiles.map(prof => {
             const isSelected = activeProfile?.id === prof.id;
             return (
-              <button
-                key={prof.id}
+              <div 
+                key={prof.id} 
                 onClick={() => handleProfileTabSwitch(prof)}
-                className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition shrink-0 flex items-center gap-1.5 ${
+                className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition shrink-0 flex items-center gap-2 cursor-pointer ${
                   isSelected 
                     ? 'bg-zinc-900 border-zinc-700 text-white shadow-inner' 
                     : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'
@@ -320,7 +350,16 @@ export default function App() {
                 {isSelected && (prof.pin || prof.name.toLowerCase() === 'mukund') && (
                   isProfileUnlocked || isAdmin ? <Unlock size={10} className="text-emerald-500" /> : <Lock size={10} className="text-zinc-600" />
                 )}
-              </button>
+                {isAdmin && prof.name.toLowerCase() !== 'mukund' && (
+                  <button 
+                    onClick={(e) => handleDeleteProfile(e, prof)}
+                    className="p-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition"
+                    title={`Delete ${prof.name}`}
+                  >
+                    <UserMinus size={11} />
+                  </button>
+                )}
+              </div>
             );
           })}
           <button 
@@ -335,10 +374,11 @@ export default function App() {
         {/* Header Navigation Area */}
         <div className="flex justify-between items-center mb-6 border-b border-zinc-800/60 pb-4">
           <div className="flex items-center gap-3">
-            {isAdmin && (
+            {/* FIX: Make the Plus button appear if the workspace is unlocked OR admin is enabled */}
+            {(isAdmin || isProfileUnlocked) && (
               <button 
                 onClick={() => setShowModal(true)} 
-                className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+                className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition shadow-sm animate-fade-in"
                 title="Add Album"
               >
                 <Plus size={16} />
@@ -583,7 +623,7 @@ export default function App() {
       )}
 
       {/* INPUT / EDIT ALBUM MODAL */}
-      {showModal && isAdmin && (
+      {showModal && (isAdmin || isProfileUnlocked) && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={closeModal}>
           <div className="bg-[#18181b] w-full max-w-lg p-6 rounded-3xl border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4 text-zinc-100">{editingAlbumId ? 'Edit Global Album' : 'Add New Album'}</h2>
