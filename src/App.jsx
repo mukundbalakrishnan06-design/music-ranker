@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2, Search, X } from 'lucide-react';
+import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2, Search, X, ExternalLink } from 'lucide-react';
 
 const SUPABASE_URL = 'https://yrecadlcgucgugvhapoi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_-8O4aLdjhEYTnnnaspj8Tw_5TFaF9Xn';
@@ -13,8 +13,6 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [editingAlbumId, setEditingAlbumId] = useState(null);
   const [expandedAlbums, setExpandedAlbums] = useState({}); 
-  
-  // Search State
   const [searchQuery, setSearchQuery] = useState('');
 
   // Spotify Integration States
@@ -22,7 +20,7 @@ export default function App() {
   const [isFetchingSpotify, setIsFetchingSpotify] = useState(false);
 
   const [formData, setFormData] = useState({ 
-    title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', songs: [] 
+    title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] 
   });
 
   // Admin Protection States
@@ -35,7 +33,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('albums')
-        .select(`id, title, artist, year, genre, image_url, songs (id, name, rating, track_number)`)
+        .select(`id, title, artist, year, genre, image_url, spotify_url, songs (id, name, rating, track_number)`)
         .order('created_at', { ascending: false })
         .order('track_number', { foreignTable: 'songs', ascending: true });
       if (error) throw error;
@@ -64,6 +62,7 @@ export default function App() {
         artist: data.artist || '',
         year: data.year || '',
         image_url: data.imageUrl || '',
+        spotify_url: spotifyUrl, // Save the actual link used to import
         tracks: data.tracks && data.tracks.length > 0 ? data.tracks.join('\n') : ''
       }));
 
@@ -107,6 +106,7 @@ export default function App() {
       year: album.year || '',
       genre: album.genre || 'Pop',
       image_url: album.image_url || '',
+      spotify_url: album.spotify_url || '',
       tracks: '',
       songs: album.songs ? [...album.songs].sort((a, b) => a.track_number - b.track_number) : [] 
     });
@@ -130,7 +130,7 @@ export default function App() {
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
           year: parseInt(formData.year) || null, genre: formData.genre,
-          image_url: formData.image_url
+          image_url: formData.image_url, spotify_url: formData.spotify_url
         }).eq('id', editingAlbumId);
 
         const { data: currentDbSongs } = await supabase.from('songs').select('id').eq('album_id', editingAlbumId);
@@ -149,7 +149,7 @@ export default function App() {
       } else {
         const { data: album, error: albumError } = await supabase
           .from('albums')
-          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre, image_url: formData.image_url }])
+          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre, image_url: formData.image_url, spotify_url: formData.spotify_url }])
           .select().single();
         if (albumError) throw albumError;
         
@@ -175,7 +175,7 @@ export default function App() {
     setShowModal(false);
     setEditingAlbumId(null);
     setSpotifyUrl('');
-    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', songs: [] });
+    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] });
   }
 
   async function updateRating(songId, rating) {
@@ -196,7 +196,6 @@ export default function App() {
     return 'text-zinc-600 font-medium'; 
   };
 
-  // Search filter logic applied to albums list
   const filteredAlbums = albums.filter(album => {
     const query = searchQuery.toLowerCase();
     return (
@@ -258,7 +257,6 @@ export default function App() {
               )}
             </div>
 
-            {/* List rendered using filtered array */}
             {filteredAlbums.length > 0 ? (
               filteredAlbums.map(album => {
                 const ratedCount = album.songs?.filter(s => s.rating > 0).length || 0;
@@ -288,6 +286,17 @@ export default function App() {
                               <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">
                                 {album.genre}
                               </span>
+                            )}
+                            {album.spotify_url && (
+                              <a 
+                                href={album.spotify_url} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()} // Stop it from closing/opening the card collapse dropdown
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 hover:text-emerald-400 bg-emerald-950/40 border border-emerald-900/40 px-1.5 py-0.5 rounded self-center transition-all h-4 ml-1"
+                              >
+                                Spotify <ExternalLink size={10} />
+                              </a>
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
@@ -393,6 +402,16 @@ export default function App() {
                           >
                             {album.title}
                           </span>
+                          {album.spotify_url && (
+                            <a 
+                              href={album.spotify_url} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="inline-flex items-center text-emerald-500 hover:text-emerald-400 transition"
+                            >
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
                         </div>
                         <div className="text-xs text-zinc-400 mt-0.5 font-medium">
                           {album.artist} {album.year ? `• ${album.year}` : ''}
@@ -445,12 +464,10 @@ export default function App() {
       {/* FOOTER & CREDIT COMPONENT */}
       <div className="max-w-4xl mx-auto w-full border-t border-zinc-900 mt-12 pt-6 pb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
         
-        {/* Left Side: Creator Credit */}
         <div className="text-zinc-600 font-medium tracking-wide text-center sm:text-left">
-          Built by <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
+          Built with ⚡ by <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
         </div>
 
-        {/* Right Side: Admin Security Lock */}
         <div>
           {isAdmin ? (
             <div className="flex items-center gap-3 bg-zinc-900/40 border border-zinc-800/50 px-3 py-1.5 rounded-xl">
@@ -515,8 +532,11 @@ export default function App() {
                 {['Pop', 'Hip Hop', 'Rock', 'R&B', 'Electronic', 'Country'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-            <div className="mb-4">
+            <div className="mb-3">
               <input placeholder="Image Cover URL (Optional)" className="w-full bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-xs text-zinc-400" value={formData.image_url} onChange={e => setFormData({...formData, image_url: e.target.value})} />
+            </div>
+            <div className="mb-4">
+              <input placeholder="Spotify Link (Optional)" className="w-full bg-zinc-900 border border-zinc-800 p-2.5 rounded-xl outline-none focus:border-zinc-500 text-xs text-zinc-400" value={formData.spotify_url} onChange={e => setFormData({...formData, spotify_url: e.target.value})} />
             </div>
 
             {editingAlbumId ? (
