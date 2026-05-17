@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2 } from 'lucide-react';
+import { Star, Plus, Pencil, Trash2, Lock, Unlock, Link2, Loader2, Search, X } from 'lucide-react';
 
 const SUPABASE_URL = 'https://yrecadlcgucgugvhapoi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_-8O4aLdjhEYTnnnaspj8Tw_5TFaF9Xn';
@@ -14,6 +14,9 @@ export default function App() {
   const [editingAlbumId, setEditingAlbumId] = useState(null);
   const [expandedAlbums, setExpandedAlbums] = useState({}); 
   
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Spotify Integration States
   const [spotifyUrl, setSpotifyUrl] = useState('');
   const [isFetchingSpotify, setIsFetchingSpotify] = useState(false);
@@ -193,6 +196,15 @@ export default function App() {
     return 'text-zinc-600 font-medium'; 
   };
 
+  // Search filter logic applied to albums list
+  const filteredAlbums = albums.filter(album => {
+    const query = searchQuery.toLowerCase();
+    return (
+      album.title?.toLowerCase().includes(query) ||
+      album.artist?.toLowerCase().includes(query)
+    );
+  });
+
   const rankedAlbums = [...albums].sort((a, b) => calcAvg(b.songs) - calcAvg(a.songs));
   
   const allSongs = albums.flatMap(a => 
@@ -228,97 +240,122 @@ export default function App() {
         {/* View 1: LIBRARY VIEW */}
         {view === 'all' && (
           <div className="space-y-4">
-            {albums.map(album => {
-              const ratedCount = album.songs?.filter(s => s.rating > 0).length || 0;
-              const totalCount = album.songs?.length || 0;
-              const isExpanded = !!expandedAlbums[album.id];
+            
+            {/* Search Input Bar */}
+            <div className="relative flex items-center bg-[#141414] border border-zinc-800/80 rounded-xl px-3 py-2 text-zinc-400 focus-within:border-zinc-700 focus-within:text-zinc-200 transition-all">
+              <Search size={16} className="shrink-0 mr-2 text-zinc-600" />
+              <input 
+                type="text" 
+                placeholder="Search library by album or artist..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-transparent outline-none text-sm placeholder-zinc-600 text-zinc-200"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="text-zinc-600 hover:text-zinc-400 transition ml-1">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
 
-              return (
-                <div key={album.id} className="bg-[#141414] rounded-xl border border-zinc-900 shadow-xl overflow-hidden">
-                  
-                  <div 
-                    onClick={() => toggleExpand(album.id)}
-                    className="p-4 bg-[#1a1a1a]/40 flex justify-between items-center gap-4 cursor-pointer hover:bg-[#1a1a1a]/60 transition"
-                  >
-                    <div className="min-w-0 flex-1 flex gap-4 items-center">
-                      {album.image_url && (
-                        <img 
-                          src={album.image_url} 
-                          alt={album.title} 
-                          className="w-12 h-12 rounded-lg object-cover bg-zinc-900 border border-zinc-800 shrink-0"
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
-                          {album.genre && (
-                            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">
-                              {album.genre}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
-                          <span>{album.artist}</span>
-                          {album.year && <span>• {album.year}</span>}
-                          <span>• {ratedCount}/{totalCount} rated</span>
-                        </div>
-                      </div>
-                    </div>
+            {/* List rendered using filtered array */}
+            {filteredAlbums.length > 0 ? (
+              filteredAlbums.map(album => {
+                const ratedCount = album.songs?.filter(s => s.rating > 0).length || 0;
+                const totalCount = album.songs?.length || 0;
+                const isExpanded = !!expandedAlbums[album.id];
 
-                    <div className="flex items-center gap-4 shrink-0">
-                      <div className="text-right">
-                        <div className="text-lg font-black text-zinc-200 leading-none">{calcAvg(album.songs)}/10</div>
-                      </div>
-                      {isAdmin && (
-                        <div className="flex gap-1">
-                          <button onClick={(e) => startEditing(e, album)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white transition">
-                            <Pencil size={12} />
-                          </button>
-                          <button onClick={(e) => deleteAlbum(e, album.id)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-red-400 transition">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="divide-y divide-zinc-900/30 px-2 pb-2 border-t border-zinc-900/40 bg-zinc-950/10">
-                      {(album.songs || []).map((song, i) => (
-                        <div key={song.id} className="flex justify-between items-center text-xs group py-2 px-2 hover:bg-zinc-900/20 transition rounded-lg">
-                          <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
-                            <span className="text-zinc-600 font-mono text-[10px] w-4 shrink-0 text-right">{i + 1}</span>
-                            <span className="text-zinc-300 truncate font-medium">{song.name}</span>
+                return (
+                  <div key={album.id} className="bg-[#141414] rounded-xl border border-zinc-900 shadow-xl overflow-hidden">
+                    
+                    <div 
+                      onClick={() => toggleExpand(album.id)}
+                      className="p-4 bg-[#1a1a1a]/40 flex justify-between items-center gap-4 cursor-pointer hover:bg-[#1a1a1a]/60 transition"
+                    >
+                      <div className="min-w-0 flex-1 flex gap-4 items-center">
+                        {album.image_url && (
+                          <img 
+                            src={album.image_url} 
+                            alt={album.title} 
+                            className="w-12 h-12 rounded-lg object-cover bg-zinc-900 border border-zinc-800 shrink-0"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
+                            {album.genre && (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">
+                                {album.genre}
+                              </span>
+                            )}
                           </div>
-                          
-                          <div className="flex items-center gap-3 shrink-0">
-                            <div className="flex gap-0.5">
-                              {[...Array(10)].map((_, starIdx) => (
-                                <Star 
-                                  key={starIdx} 
-                                  size={12} 
-                                  onClick={() => updateRating(song.id, starIdx + 1)}
-                                  className={`transition-all ${!isAdmin ? 'cursor-default' : 'cursor-pointer'} ${
-                                    song.rating > starIdx 
-                                      ? 'fill-yellow-500 text-yellow-500 drop-shadow-[0_0_2px_rgba(234,179,8,0.3)]' 
-                                      : song.rating === 0 && !isAdmin 
-                                        ? 'text-zinc-900/40' 
-                                        : 'text-zinc-800 hover:text-zinc-500'
-                                  }`}
-                                />
-                              ))}
+                          <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
+                            <span>{album.artist}</span>
+                            {album.year && <span>• {album.year}</span>}
+                            <span>• {ratedCount}/{totalCount} rated</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 shrink-0">
+                        <div className="text-right">
+                          <div className="text-lg font-black text-zinc-200 leading-none">{calcAvg(album.songs)}/10</div>
+                        </div>
+                        {isAdmin && (
+                          <div className="flex gap-1">
+                            <button onClick={(e) => startEditing(e, album)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white transition">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={(e) => deleteAlbum(e, album.id)} className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-red-400 transition">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="divide-y divide-zinc-900/30 px-2 pb-2 border-t border-zinc-900/40 bg-zinc-950/10">
+                        {(album.songs || []).map((song, i) => (
+                          <div key={song.id} className="flex justify-between items-center text-xs group py-2 px-2 hover:bg-zinc-900/20 transition rounded-lg">
+                            <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
+                              <span className="text-zinc-600 font-mono text-[10px] w-4 shrink-0 text-right">{i + 1}</span>
+                              <span className="text-zinc-300 truncate font-medium">{song.name}</span>
                             </div>
-                            <span className="font-bold text-zinc-500 w-4 text-right text-[11px] font-mono">{song.rating || '-'}</span>
+                            
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="flex gap-0.5">
+                                {[...Array(10)].map((_, starIdx) => (
+                                  <Star 
+                                    key={starIdx} 
+                                    size={12} 
+                                    onClick={() => updateRating(song.id, starIdx + 1)}
+                                    className={`transition-all ${!isAdmin ? 'cursor-default' : 'cursor-pointer'} ${
+                                      song.rating > starIdx 
+                                        ? 'fill-yellow-500 text-yellow-500 drop-shadow-[0_0_2px_rgba(234,179,8,0.3)]' 
+                                        : song.rating === 0 && !isAdmin 
+                                          ? 'text-zinc-900/40' 
+                                          : 'text-zinc-800 hover:text-zinc-500'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="font-bold text-zinc-500 w-4 text-right text-[11px] font-mono">{song.rating || '-'}</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
 
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-12 text-zinc-600 text-xs font-medium">
+                No matching albums found.
+              </div>
+            )}
           </div>
         )}
 
@@ -408,9 +445,9 @@ export default function App() {
       {/* FOOTER & CREDIT COMPONENT */}
       <div className="max-w-4xl mx-auto w-full border-t border-zinc-900 mt-12 pt-6 pb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
         
-        {/* Left Side: Your Creator Credit */}
+        {/* Left Side: Creator Credit */}
         <div className="text-zinc-600 font-medium tracking-wide text-center sm:text-left">
-          By <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
+          Built by <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
         </div>
 
         {/* Right Side: Admin Security Lock */}
