@@ -46,7 +46,6 @@ export default function App() {
     if (!spotifyUrl.trim()) return alert("Please paste a valid Spotify link first!");
     setIsFetchingSpotify(true);
     try {
-      // Direct integration endpoint path mapping to our Netlify backend middleware engine
       const response = await fetch('/.netlify/functions/get-spotify-album', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +64,7 @@ export default function App() {
         tracks: data.tracks && data.tracks.length > 0 ? data.tracks.join('\n') : ''
       }));
 
-      setSpotifyUrl(''); // Reset url link state row completely upon complete generation pass
+      setSpotifyUrl(''); 
     } catch (err) {
       alert(`Spotify Import Error: ${err.message}`);
     } finally {
@@ -406,31 +405,41 @@ export default function App() {
 
       </div>
 
-      {/* FOOTER LOCK COMPONENT */}
-      <div className="max-w-4xl mx-auto w-full border-t border-zinc-900 mt-12 pt-4 pb-2 flex justify-center items-center text-xs">
-        {isAdmin ? (
-          <div className="flex items-center gap-3 bg-zinc-900/40 border border-zinc-800/50 px-3 py-1.5 rounded-xl">
-            <Unlock size={12} className="text-emerald-500 animate-pulse" />
-            <span className="text-zinc-400 font-medium">Logged in as Editor</span>
-            <button 
-              onClick={handleSignOut} 
-              className="text-[10px] text-zinc-500 font-bold tracking-wider hover:text-white ml-2 bg-zinc-800 px-2 py-0.5 rounded transition"
-            >
-              LOCK
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 bg-zinc-900/20 px-3 py-1 rounded-xl group hover:bg-zinc-900/50 transition border border-transparent hover:border-zinc-800/40">
-            <Lock size={11} className="text-zinc-600 group-hover:text-zinc-400 transition" />
-            <input 
-              type="password" 
-              placeholder="Admin unlock" 
-              value={passwordInput}
-              onChange={handlePasswordChange}
-              className="bg-transparent outline-none w-20 text-zinc-600 focus:text-zinc-300 placeholder-zinc-700 focus:placeholder-zinc-500 font-medium transition text-center"
-            />
-          </div>
-        )}
+      {/* FOOTER & CREDIT COMPONENT */}
+      <div className="max-w-4xl mx-auto w-full border-t border-zinc-900 mt-12 pt-6 pb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+        
+        {/* Left Side: Your Creator Credit */}
+        <div className="text-zinc-600 font-medium tracking-wide text-center sm:text-left">
+          Built with ⚡ by <span className="text-zinc-400 font-bold hover:text-amber-500 transition cursor-default">Mukund</span>
+        </div>
+
+        {/* Right Side: Admin Security Lock */}
+        <div>
+          {isAdmin ? (
+            <div className="flex items-center gap-3 bg-zinc-900/40 border border-zinc-800/50 px-3 py-1.5 rounded-xl">
+              <Unlock size={12} className="text-emerald-500 animate-pulse" />
+              <span className="text-zinc-400 font-medium">Logged in as Editor</span>
+              <button 
+                onClick={handleSignOut} 
+                className="text-[10px] text-zinc-500 font-bold tracking-wider hover:text-white ml-2 bg-zinc-800 px-2 py-0.5 rounded transition"
+              >
+                LOCK
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-zinc-900/20 px-3 py-1 rounded-xl group hover:bg-zinc-900/50 transition border border-transparent hover:border-zinc-800/40">
+              <Lock size={11} className="text-zinc-600 group-hover:text-zinc-400 transition" />
+              <input 
+                type="password" 
+                placeholder="Admin unlock" 
+                value={passwordInput}
+                onChange={handlePasswordChange}
+                className="bg-transparent outline-none w-20 text-zinc-600 focus:text-zinc-300 placeholder-zinc-700 focus:placeholder-zinc-500 font-medium transition text-center text-xs"
+              />
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* INPUT / EDIT MODAL WITH SPOTIFY HOOKS */}
@@ -439,7 +448,6 @@ export default function App() {
           <div className="bg-[#181818] w-full max-w-lg p-6 rounded-3xl border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">{editingAlbumId ? 'Edit Album' : 'Add Album'}</h2>
             
-            {/* Spotify URL Link-Paste Bar (Only displays when creating brand new tracks) */}
             {!editingAlbumId && (
               <div className="mb-4 flex gap-2 bg-zinc-950 p-2 rounded-xl border border-zinc-800/60 focus-within:border-zinc-700 transition">
                 <div className="flex items-center pl-1 text-zinc-500"><Link2 size={14} /></div>
