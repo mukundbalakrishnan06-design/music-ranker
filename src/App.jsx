@@ -30,7 +30,7 @@ export default function App() {
   const [isFetchingSpotify, setIsFetchingSpotify] = useState(false);
   
   const [formData, setFormData] = useState({ 
-    title: '', artist: '', year: '', era: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] 
+    title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] 
   });
 
   // Admin Protection States
@@ -65,11 +65,12 @@ export default function App() {
 
   async function fetchAlbums() {
     try {
+      // FIXED: Selecting both 'genre' and 'era' to prevent null-value crashes
       const { data, error } = await supabase
         .from('albums')
-        .select(`id, title, artist, year, era, image_url, spotify_url, songs (id, name, track_number), song_ratings (profile_id, song_id, rating)`)
-        .order('created_at', { ascending: false })
-        .order('track_number', { foreignTable: 'songs', ascending: true });
+        .select(`id, title, artist, year, genre, era, image_url, spotify_url, songs (id, name, track_number), song_ratings (profile_id, song_id, rating)`)
+        .order('created_at', { ascending: false });
+        
       if (error) throw error;
       setAlbums(data || []);
     } catch (err) {
@@ -83,7 +84,6 @@ export default function App() {
     return match ? match.rating : 0;
   };
 
-  // FIX: Made fallback math fully resilient so unrated albums return 0 instead of crashing loops
   const calcAvg = (album) => {
     if (!album || !album.songs || album.songs.length === 0 || !album.song_ratings || !activeProfile) return "0.0";
     const userRatings = album.song_ratings.filter(r => r.profile_id === activeProfile.id && r.rating > 0);
@@ -248,7 +248,7 @@ export default function App() {
     if (!isAdmin) return;
     setEditingAlbumId(album.id);
     setFormData({
-      title: album.title, artist: album.artist, year: album.year || '', era: album.era || 'Pop',
+      title: album.title, artist: album.artist, year: album.year || '', genre: album.genre || 'Pop',
       image_url: album.image_url || '', spotify_url: album.spotify_url || '', tracks: '',
       songs: album.songs ? [...album.songs].sort((a, b) => a.track_number - b.track_number) : [] 
     });
@@ -265,22 +265,19 @@ export default function App() {
   }
 
   async function handleSaveAlbum() {
-    if (!isAdmin && !isProfileUnlocked) {
-      return alert("Please unlock your workspace dashboard session to register new albums!");
-    }
     if (!formData.title || !formData.artist) return alert("Title and Artist required!");
     
     try {
       if (editingAlbumId) {
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
-          year: parseInt(formData.year) || null, era: formData.era,
+          year: parseInt(formData.year) || null, genre: formData.genre,
           image_url: formData.image_url, spotify_url: formData.spotify_url
         }).eq('id', editingAlbumId);
       } else {
         const { data: album, error: albumError } = await supabase
           .from('albums')
-          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, era: formData.era, image_url: formData.image_url, spotify_url: formData.spotify_url }])
+          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre, image_url: formData.image_url, spotify_url: formData.spotify_url }])
           .select().single();
         if (albumError) throw albumError;
         
@@ -307,7 +304,7 @@ export default function App() {
   function closeModal() {
     setShowModal(false);
     setEditingAlbumId(null);
-    setFormData({ title: '', artist: '', year: '', era: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] });
+    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] });
   }
 
   const getRankColor = (index) => {
@@ -317,6 +314,7 @@ export default function App() {
     return 'text-zinc-500 font-medium'; 
   };
 
+  // FIXED: Added defensive map chains to survive albums with empty song lists
   const filteredAlbums = (albums || []).filter(album => {
     if (!album) return false;
     const query = searchQuery.toLowerCase();
@@ -376,26 +374,16 @@ export default function App() {
         {/* Header Navigation Area */}
         <div className="flex justify-between items-center mb-6 border-b border-zinc-800/60 pb-4">
           <div className="flex items-center gap-3">
-            {(isAdmin || isProfileUnlocked) && (
-              <button 
-                onClick={() => setShowModal(true)} 
-                className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition shadow-sm"
-                title="Add Album"
-              >
-                <Plus size={16} />
-              </button>
-            )}
+            <button 
+              onClick={() => setShowModal(true)} 
+              className="p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition shadow-sm"
+              title="Add Album"
+            >
+              <Plus size={16} />
+            </button>
             <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-lg bg-zinc-900 text-zinc-500 border border-zinc-800/40">
               {isAdmin ? "Admin Mode" : isProfileUnlocked ? `${activeProfile?.name} Edit Mode` : "Viewer Mode"}
             </span>
-            {activeProfile?.pin && !isProfileUnlocked && !isAdmin && (
-              <button 
-                onClick={() => setPinPromptOpen(true)}
-                className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-lg bg-zinc-900 border border-amber-900/40 text-amber-500 hover:bg-amber-950/20 transition flex items-center gap-1"
-              >
-                <Lock size={10} /> Unlock Rating
-              </button>
-            )}
           </div>
           <div className="flex gap-2">
             <button onClick={() => setView('all')} className={`px-4 py-1.5 rounded-full text-xs font-bold ${view === 'all' ? 'bg-white text-black' : 'text-zinc-500'}`}>Library</button>
@@ -422,6 +410,7 @@ export default function App() {
               filteredAlbums.map(album => {
                 const isExpanded = !!expandedAlbums[album.id];
                 const albumAvg = calcAvg(album);
+                const displayGenre = album.genre || album.era || "Pop";
 
                 return (
                   <div key={album.id} className="bg-[#18181b]/50 rounded-xl border border-zinc-900 shadow-xl overflow-hidden">
@@ -442,7 +431,7 @@ export default function App() {
                             ) : (
                               <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
                             )}
-                            {album.era && <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">{album.era}</span>}
+                            <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">{displayGenre}</span>
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
                             <span>{album.artist}</span>
@@ -467,7 +456,7 @@ export default function App() {
 
                     {isExpanded && (
                       <div className="divide-y divide-zinc-900/40 px-2 pb-2 border-t border-zinc-900/60 bg-zinc-950/20">
-                        {(album.songs || []).map((song, i) => {
+                        {(album.songs || []).length > 0 ? (album.songs || []).map((song, i) => {
                           const currentRating = getSongRating(album, song.id);
                           return (
                             <div key={song.id} className="flex justify-between items-center text-xs group py-2 px-2 hover:bg-zinc-900/30 transition rounded-lg">
@@ -493,7 +482,9 @@ export default function App() {
                               </div>
                             </div>
                           );
-                        })}
+                        }) : (
+                          <div className="text-center py-4 text-zinc-700 text-xs">No tracks recorded for this album yet.</div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -540,7 +531,7 @@ export default function App() {
               }) : allSongs.map((song, i) => {
                 const percentage = Math.min((song.rating / 10) * 100, 100);
                 return (
-                  <div key={song.id} className="relative bg-[#18181b]/40 p-4 rounded-xl border border-zinc-900 shadow-md flex items-center justify-between overflow-hidden group hover:border-zinc-800/60 transition">
+                  <div key={song.id} className="relative bg-[#18181b]/40 p-4 rounded-xl border border-zinc-900 shadow-md flex items-center justify-between overflow-hidden group group-hover:border-zinc-800/60 transition">
                     <div className="flex items-center gap-4 min-w-0 z-10">
                       <span className={`text-sm font-bold w-6 shrink-0 ${getRankColor(i)}`}>#{i + 1}</span>
                       <div className="min-w-0">
@@ -624,7 +615,7 @@ export default function App() {
       )}
 
       {/* INPUT / EDIT ALBUM MODAL */}
-      {showModal && (isAdmin || isProfileUnlocked) && (
+      {showModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={closeModal}>
           <div className="bg-[#18181b] w-full max-w-lg p-6 rounded-3xl border border-zinc-800 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4 text-zinc-100">{editingAlbumId ? 'Edit Global Album' : 'Add New Album'}</h2>
@@ -641,7 +632,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <input placeholder="Year" type="number" className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-sm text-white outline-none" value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} />
-              <select className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-zinc-400 text-sm outline-none" value={formData.era} onChange={e => setFormData({...formData, era: e.target.value})}>
+              <select className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-zinc-400 text-sm outline-none" value={formData.genre} onChange={e => setFormData({...formData, genre: e.target.value})}>
                 {['Pop', 'Hip Hop', 'Rock', 'R&B', 'Electronic', 'Country'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
