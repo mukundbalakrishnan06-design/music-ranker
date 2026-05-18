@@ -28,8 +28,9 @@ export default function App() {
   const [expandedAlbums, setExpandedAlbums] = useState({}); 
   const [spotifyUrl, setSpotifyUrl] = useState('');
   const [isFetchingSpotify, setIsFetchingSpotify] = useState(false);
+  
   const [formData, setFormData] = useState({ 
-    title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] 
+    title: '', artist: '', year: '', era: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] 
   });
 
   // Admin Protection States
@@ -66,7 +67,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('albums')
-        .select(`id, title, artist, year, genre, image_url, spotify_url, songs (id, name, track_number), song_ratings (profile_id, song_id, rating)`)
+        .select(`id, title, artist, year, era, image_url, spotify_url, songs (id, name, track_number), song_ratings (profile_id, song_id, rating)`)
         .order('created_at', { ascending: false })
         .order('track_number', { foreignTable: 'songs', ascending: true });
       if (error) throw error;
@@ -77,20 +78,21 @@ export default function App() {
   }
 
   const getSongRating = (album, songId) => {
-    if (!activeProfile || !album.song_ratings) return 0;
+    if (!activeProfile || !album?.song_ratings) return 0;
     const match = album.song_ratings.find(r => r.song_id === songId && r.profile_id === activeProfile.id);
     return match ? match.rating : 0;
   };
 
+  // FIX: Made fallback math fully resilient so unrated albums return 0 instead of crashing loops
   const calcAvg = (album) => {
-    if (!album.songs || album.songs.length === 0 || !album.song_ratings || !activeProfile) return 0;
+    if (!album || !album.songs || album.songs.length === 0 || !album.song_ratings || !activeProfile) return "0.0";
     const userRatings = album.song_ratings.filter(r => r.profile_id === activeProfile.id && r.rating > 0);
-    if (userRatings.length === 0) return 0;
+    if (userRatings.length === 0) return "0.0";
     return (userRatings.reduce((acc, r) => acc + r.rating, 0) / userRatings.length).toFixed(1);
   };
 
-  const getRatedCount = (album) => {
-    if (!album.song_ratings || !activeProfile) return 0;
+  const getRecordedCount = (album) => {
+    if (!album || !album.song_ratings || !activeProfile) return 0;
     return album.song_ratings.filter(r => r.profile_id === activeProfile.id && r.rating > 0).length;
   };
 
@@ -246,7 +248,7 @@ export default function App() {
     if (!isAdmin) return;
     setEditingAlbumId(album.id);
     setFormData({
-      title: album.title, artist: album.artist, year: album.year || '', genre: album.genre || 'Pop',
+      title: album.title, artist: album.artist, year: album.year || '', era: album.era || 'Pop',
       image_url: album.image_url || '', spotify_url: album.spotify_url || '', tracks: '',
       songs: album.songs ? [...album.songs].sort((a, b) => a.track_number - b.track_number) : [] 
     });
@@ -272,20 +274,19 @@ export default function App() {
       if (editingAlbumId) {
         await supabase.from('albums').update({
           title: formData.title, artist: formData.artist,
-          year: parseInt(formData.year) || null, genre: formData.genre,
+          year: parseInt(formData.year) || null, era: formData.era,
           image_url: formData.image_url, spotify_url: formData.spotify_url
         }).eq('id', editingAlbumId);
       } else {
         const { data: album, error: albumError } = await supabase
           .from('albums')
-          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, genre: formData.genre, image_url: formData.image_url, spotify_url: formData.spotify_url }])
+          .insert([{ title: formData.title, artist: formData.artist, year: parseInt(formData.year) || null, era: formData.era, image_url: formData.image_url, spotify_url: formData.spotify_url }])
           .select().single();
         if (albumError) throw albumError;
         
         if (formData.tracks.trim()) {
           const lines = formData.tracks.split('\n').filter(t => t.trim());
           
-          // FIX: Removed "rating: 0" insert parameter since tracking now relies cleanly on 'song_ratings'
           const songsToInsert = lines.map((line, index) => ({
             name: line.trim(),
             album_id: album.id,
@@ -298,7 +299,6 @@ export default function App() {
       }
       closeModal();
       await fetchAlbums();
-      alert("Album successfully saved to library!");
     } catch (error) { 
       alert(`Save operation failed: ${error.message}`); 
     }
@@ -307,7 +307,7 @@ export default function App() {
   function closeModal() {
     setShowModal(false);
     setEditingAlbumId(null);
-    setFormData({ title: '', artist: '', year: '', genre: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] });
+    setFormData({ title: '', artist: '', year: '', era: 'Pop', tracks: '', image_url: '', spotify_url: '', songs: [] });
   }
 
   const getRankColor = (index) => {
@@ -317,15 +317,16 @@ export default function App() {
     return 'text-zinc-500 font-medium'; 
   };
 
-  const filteredAlbums = albums.filter(album => {
+  const filteredAlbums = (albums || []).filter(album => {
+    if (!album) return false;
     const query = searchQuery.toLowerCase();
     return album.title?.toLowerCase().includes(query) || album.artist?.toLowerCase().includes(query);
   });
 
-  const rankedAlbums = [...albums].sort((a, b) => calcAvg(b) - calcAvg(a));
+  const rankedAlbums = [...(albums || [])].sort((a, b) => parseFloat(calcAvg(b)) - parseFloat(calcAvg(a)));
   
-  const allSongs = albums.flatMap(a => 
-    (a.songs || []).map(s => ({ ...s, rating: getSongRating(a, s.id), albumTitle: a.title, artist: a.artist, year: a.year }))
+  const allSongs = (albums || []).flatMap(a => 
+    (a?.songs || []).map(s => ({ ...s, rating: getSongRating(a, s.id), albumTitle: a.title, artist: a.artist, year: a.year }))
   ).sort((a, b) => b.rating - a.rating);
 
   return (
@@ -441,12 +442,12 @@ export default function App() {
                             ) : (
                               <h2 className="text-base font-bold text-zinc-100 leading-none">{album.title}</h2>
                             )}
-                            {album.genre && <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">{album.genre}</span>}
+                            {album.era && <span className="px-1.5 py-0.5 rounded bg-zinc-800/60 text-zinc-500 text-[9px] uppercase font-bold tracking-wider inline-flex items-center justify-center h-4 self-center">{album.era}</span>}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-zinc-500">
                             <span>{album.artist}</span>
                             {album.year && <span>• {album.year}</span>}
-                            <span>• {getRatedCount(album)}/{album.songs?.length || 0} rated</span>
+                            <span>• {getRecordedCount(album)}/{album.songs?.length || 0} rated</span>
                           </div>
                         </div>
                       </div>
@@ -640,7 +641,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <input placeholder="Year" type="number" className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-sm text-white outline-none" value={formData.year} onChange={e => setFormData({...formData, year: e.target.value})} />
-              <select className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-zinc-400 text-sm outline-none" value={formData.genre} onChange={e => setFormData({...formData, genre: e.target.value})}>
+              <select className="bg-zinc-900/60 border border-zinc-800 p-2.5 rounded-xl text-zinc-400 text-sm outline-none" value={formData.era} onChange={e => setFormData({...formData, era: e.target.value})}>
                 {['Pop', 'Hip Hop', 'Rock', 'R&B', 'Electronic', 'Country'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
